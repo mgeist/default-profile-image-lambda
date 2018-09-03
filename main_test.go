@@ -1,38 +1,66 @@
 package main
 
-import "testing"
+import (
+	"github.com/aws/aws-lambda-go/events"
+	"testing"
+)
 
-func TestSanitize(t *testing.T) {
-	params := RequestParams{"AB", 50}
-	params.sanitize()
-
-	if params.Initials != "AB" {
-		t.Error("Expected initials to be unchanged, got", params.Initials)
+func TestSanitizeInitials(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", "A"},
+		{"A", "A"},
+		{"AA", "AA"},
+		{"AAA", "AA"},
 	}
 
-	if params.Size != 50 {
-		t.Error("Expected size to be unchanged, got", params.Size)
+	for _, test := range tests {
+		output := sanitizeInitials(test.input)
+		if output != test.expected {
+			t.Errorf("sanitizeInitials(%s): expected %s, got %s", test.input, test.expected, output)
+		}
+	}
+}
+
+func TestSanitizeSize(t *testing.T) {
+	tests := []struct {
+		input       string
+		expected    int
+		expectedErr bool
+	}{
+		{"", 40, false},
+		{"9", 10, false},
+		{"40", 40, false},
+		{"151", 150, false},
+		{"aaa", 0, true},
 	}
 
-	bad_params := RequestParams{"ABAB", 500}
-	bad_params.sanitize()
-
-	if bad_params.Initials != "AB" {
-		t.Error("Expected initials to be changed, got", bad_params.Initials)
-	}
-
-	if bad_params.Size != 150 {
-		t.Error("Expected size to be changed, got", bad_params.Size)
+	for _, test := range tests {
+		output, outputErr := sanitizeSize(test.input)
+		if output != test.expected {
+			t.Errorf(
+				"sanitizeSize(%s): expected %d, got %d",
+				test.input, test.expected, output,
+			)
+		}
+		if (outputErr != nil) != test.expectedErr {
+			t.Errorf(
+				"sanitizeSize(%s): expected err: %t, got err: %t",
+				test.input, test.expectedErr, outputErr != nil,
+			)
+		}
 	}
 }
 
 func TestHandleRequest(t *testing.T) {
-	params := RequestParams{"AB", 50}
-	imgString, _ := HandleRequest(params)
-	imgString2, _ := HandleRequest(params)
+	params := map[string]string{"initials": "AB", "size": "50"}
+	req := events.APIGatewayProxyRequest{QueryStringParameters: params}
+	resp1, _ := HandleRequest(req)
+	resp2, _ := HandleRequest(req)
 
-	if imgString == imgString2 {
-		t.Error("Expected image strings to differ")
+	if resp1.Body == resp2.Body {
+		t.Error("Expected response body (image content) to differ")
 	}
-
 }

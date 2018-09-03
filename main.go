@@ -3,41 +3,71 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"image/png"
 	"math"
+	"strconv"
 )
 
-type RequestParams struct {
-	Initials string `json:"initials"`
-	Size     int    `json:"size"`
-}
-
-func (params *RequestParams) sanitize() {
-	// max length of 2
-	if len(params.Initials) > 2 {
-		params.Initials = params.Initials[:2]
+func sanitizeInitials(initials string) string {
+	if len(initials) == 0 {
+		return "A"
 	}
-	// max size of 150
-	// min size of 10
-	params.Size = int(math.Min(float64(params.Size), 150))
-	params.Size = int(math.Max(float64(params.Size), 10))
+
+	if len(initials) > 2 {
+		return initials[:2]
+	}
+
+	return initials
 }
 
-func HandleRequest(params RequestParams) (string, error) {
-	encoder := png.Encoder{png.BestSpeed}
+func sanitizeSize(size string) (int, error) {
+	if len(size) == 0 {
+		return 40, nil
+	}
+
+	floatSize, err := strconv.ParseFloat(size, 64)
+	if err != nil {
+		return 0, err
+	}
+	floatSize = math.Min(floatSize, 150)
+	floatSize = math.Max(floatSize, 10)
+
+	return int(floatSize), nil
+}
+
+func HandleRequest(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	encoder := png.Encoder{png.BestSpeed, nil}
 	buf := new(bytes.Buffer)
 
-	params.sanitize()
+	initials := sanitizeInitials(request.QueryStringParameters["initials"])
+	size, err := sanitizeSize(request.QueryStringParameters["size"])
 
-	img, err := generateImage(params.Initials, params.Size)
 	if err != nil {
-		return "", err
+		return events.APIGatewayProxyResponse{
+			StatusCode: 200,
+			Body:       err.Error(),
+		}, nil
+	}
+
+	img, err := generateImage(initials, size)
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 200,
+			Body:       err.Error(),
+		}, nil
 	}
 
 	encoder.Encode(buf, img)
-	encodedString := base64.StdEncoding.EncodeToString(buf.Bytes())
-	return encodedString, nil
+
+	return events.APIGatewayProxyResponse{
+		StatusCode:      200,
+		Headers:         map[string]string{"Content-Type": "image/png"},
+		Body:            base64.StdEncoding.EncodeToString(buf.Bytes()),
+		IsBase64Encoded: true,
+	}, nil
+
 }
 
 func main() {
